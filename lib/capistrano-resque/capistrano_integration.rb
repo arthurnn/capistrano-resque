@@ -10,9 +10,9 @@ module CapistranoResque
         _cset(:app_env) { fetch(:rails_env, "production") }
         _cset(:verbosity, 1)
 
-        def remote_file_exists?(full_path)
-          "true" ==  capture("if [ -e #{full_path} ]; then echo 'true'; fi").strip
-        end
+        # def remote_file_exists?(full_path)
+        #   "true" ==  capture("if [ -e #{full_path} ]; then echo 'true'; fi").strip
+        # end
 
         def remote_process_exists?(pid_file)
           capture("ps -p $(cat #{pid_file}) ; true").strip.split("\n").size == 2
@@ -40,7 +40,7 @@ module CapistranoResque
 
         namespace :resque do
           desc "See current worker status"
-          task :status, :roles => :resque_worker do
+          task :status, :roles => workers_roles do
             current_pids.each do |pid|
               if remote_file_exists?(pid)
                 if remote_process_exists?(pid)
@@ -54,13 +54,15 @@ module CapistranoResque
 
           desc "Start Resque workers"
           task :start, :roles => workers_roles do
-            worker_id = 1
+            
             for_each_workers do |role, workers|
+              worker_id = 1
               workers.each_pair do |queue, number_of_workers|
                 puts "Starting #{number_of_workers} worker(s) with QUEUE: #{queue}"
                 number_of_workers.times do
-                  pid = "./tmp/pids/resque_worker_#{worker_id}.pid"
-                  run("cd #{current_path} && RAILS_ENV=#{app_env} QUEUE=\"#{queue}\" PIDFILE=#{pid} BACKGROUND=yes VERBOSE=1 bundle exec rake environment resque:work", 
+                  pid = "./tmp/pids/resque_work_#{worker_id}.pid"
+                  run("cd #{current_path} && RAILS_ENV=#{app_env} QUEUE=\"#{queue}\" \
+                   PIDFILE=#{pid} BACKGROUND=yes VERBOSE=1 bundle exec rake environment resque:work >> #{shared_path}/log/resque.log 2>&1 &", 
                       :roles => role)
                   worker_id += 1
                 end
@@ -71,23 +73,28 @@ module CapistranoResque
 
           desc "Quit running Resque workers"
           task :stop, :roles => workers_roles do
-            current_pids.each do |pid|
-              if remote_file_exists?(pid)
-                if remote_process_exists?(pid)
-                  logger.important("Stopping...", "Resque Worker: #{pid}")
-                  run "#{try_sudo} kill `cat #{pid}`"
-                else
-                  run "rm #{pid}"
-                  logger.important("Resque Worker #{pid} is not running.", "Resque")
-                end
-              else
-                logger.important("No PIDs found. Check if Resque is running.", "Resque")
-              end
-            end
+            
+            run "for f in `ls #{current_path}/tmp/pids/resque_work*.pid`; do kill `cat $f` ; rm $f ;done "
+            
+            # current_pids.each do |pid_file|
+            #           pid = pid_file.strip.split(/\r{0,1}\n/)
+            #           # if remote_file_exists?(pid)
+            #             # if remote_process_exists?(pid)
+            #               logger.important("Stopping...", "Resque Worker: #{pid}")
+            #               run "#{try_sudo} kill `cat #{pid}`"
+            #           run "if [ -f #{pid_file} ]; then #{try_sudo} kill `cat #{pid_file}` ; fi"
+            #             # else
+            #             #   run "rm #{pid}"
+            #             #   logger.important("Resque Worker #{pid} is not running.", "Resque")
+            #             # end
+            #           # else
+            #           #   logger.important("No PIDs found. Check if Resque is running.", "Resque")
+            #           # end
+            #         end
           end
 
           desc "Restart running Resque workers"
-          task :restart, :roles => :resque_worker do
+          task :restart, :roles => workers_roles do
             stop
             start
           end
@@ -96,7 +103,7 @@ module CapistranoResque
             desc "Starts resque scheduler with default configs"
             task :start, :roles => :resque_scheduler do
               run "cd #{current_path} && RAILS_ENV=#{app_env} \
-PIDFILE=./tmp/pids/scheduler.pid BACKGROUND=yes bundle exec rake resque:scheduler"
+PIDFILE=./tmp/pids/scheduler.pid BACKGROUND=yes bundle exec rake resque:scheduler >> #{shared_path}/log/resque_scheduler.log 2>&1 &"
             end
 
             desc "Stops resque scheduler"
