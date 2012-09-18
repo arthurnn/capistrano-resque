@@ -67,13 +67,13 @@ module CapistranoResque
           
           namespace :scheduler do
             desc "Starts resque scheduler with default configs"
-            task :start, :roles => :resque_scheduler do
+            task :start, :roles => :resque_scheduler, :on_no_matching_servers => :continue do
               run "cd #{current_path} && RAILS_ENV=#{rails_env} \
 PIDFILE=./tmp/pids/scheduler.pid BACKGROUND=yes bundle exec rake resque:scheduler >> #{shared_path}/log/resque_scheduler.log 2>&1 &"
             end
 
             desc "Stops resque scheduler"
-            task :stop, :roles => :resque_scheduler do
+            task :stop, :roles => :resque_scheduler, :on_no_matching_servers => :continue do
               pid = "#{current_path}/tmp/pids/scheduler.pid"
               command = "if [ -e #{pid} ]; then \
                 #{try_sudo} kill $(cat #{pid}) ; rm #{pid}\
